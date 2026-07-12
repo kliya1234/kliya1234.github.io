@@ -49,14 +49,12 @@
                 document.getElementById('article-list').innerHTML = '<p>資料載入失敗 😢</p>';
             });
 
-        # 顯示特定頁面資料的函式
+        // 顯示特定頁面資料的函式 (已將 # 改為 //)
         function renderPage() {
             const listContainer = document.getElementById('article-list');
             listContainer.innerHTML = ''; // 清空舊畫面
 
             // 2. 計算這一頁要顯示的「起點」與「終點」索引
-            // 假設第一頁(page=1)：start = 0, end = 25
-            // 假設第二頁(page=2)：start = 25, end = 50
             const startIndex = (currentPage - 1) * pageSize;
             const endIndex = startIndex + pageSize;
             
@@ -85,7 +83,7 @@
             document.getElementById('next-btn').disabled = (endIndex >= allArticles.length);
         }
 
-        # 切換頁面的按鈕事件
+        // 切換頁面的按鈕事件 (已將 # 改為 //)
         function changePage(direction) {
             currentPage += direction; // +1 代表下一頁，-1 代表上一頁
             renderPage();             // 重新渲染畫面
