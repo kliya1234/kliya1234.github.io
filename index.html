@@ -2,14 +2,49 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>我的第一個網站</title>
+    <title>Dcard 備份總覽</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding-top: 50px; background: #f4f4f9; }
-        h1 { color: #333; }
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f7f9; }
+        h1 { color: #003264; border-bottom: 2px solid #003264; padding-bottom: 10px; }
+        .post-list { list-style: none; padding: 0; }
+        .post-item { background: white; margin: 10px 0; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .post-link { color: #006aa6; text-decoration: none; font-weight: bold; font-size: 18px; }
+        .post-link:hover { text-decoration: underline; color: #004b75; }
     </style>
 </head>
 <body>
-    <h1>晚安馬卡巴卡</h1>
-    
+
+    <h1>🚀 Dcard 備份文章列表</h1>
+    <ul id="article-list" class="post-list">
+        <p>文章載入中...</p>
+    </ul>
+
+    <script>
+        // 1. 讓瀏覽器去讀取同目錄下的 data.json (加上時間戳防快取)
+        fetch('data.json?v=' + new Date().getTime())
+            .then(response => response.json())
+            .then(data => {
+                const listContainer = document.getElementById('article-list');
+                listContainer.innerHTML = ''; // 清空「載入中」的文字
+
+                // 2. 用迴圈把每一筆 JSON 資料倒出來，生出 HTML 標籤
+                data.forEach(post => {
+                    const li = document.createElement('li');
+                    li.className = 'post-item';
+                    
+                    // 這裡讓連結指向 posts/post_ID.html 的格式
+                    li.innerHTML = `
+                        <a class="post-link" href="posts/post_${post.id}.html" target="_blank">
+                            【Dcard】${post.title}
+                        </a>
+                    `;
+                    listContainer.appendChild(li);
+                });
+            })
+            .catch(error => {
+                console.error('讀取 JSON 失敗:', error);
+                document.getElementById('article-list').innerHTML = '<p>資料載入失敗 😢</p>';
+            });
+    </script>
 </body>
 </html>
