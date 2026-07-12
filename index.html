@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Dcard 備份總覽</title>
+    <title>Dcard 備份總覽 - 分頁版</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f7f9; }
         h1 { color: #003264; border-bottom: 2px solid #003264; padding-bottom: 10px; }
@@ -10,41 +10,87 @@
         .post-item { background: white; margin: 10px 0; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
         .post-link { color: #006aa6; text-decoration: none; font-weight: bold; font-size: 18px; }
         .post-link:hover { text-decoration: underline; color: #004b75; }
+        
+        /* 分頁按鈕樣式 */
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+        .page-btn { padding: 8px 16px; background-color: #003264; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .page-btn:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .page-info { font-weight: bold; color: #555; }
     </style>
 </head>
 <body>
 
     <h1>🚀 Dcard 備份文章列表</h1>
+    
     <ul id="article-list" class="post-list">
         <p>文章載入中...</p>
     </ul>
 
+    <div class="pagination-container">
+        <button id="prev-btn" class="page-btn" onclick="changePage(-1)" disabled>上一頁</button>
+        <span id="page-info" class="page-info">第 1 頁</span>
+        <button id="next-btn" class="page-btn" onclick="changePage(1)" disabled>下一頁</button>
+    </div>
+
     <script>
-        // 1. 讓瀏覽器去讀取同目錄下的 data.json (加上時間戳防快取)
+        let allArticles = []; // 儲存從 json 抓到的全部文章
+        let currentPage = 1;  // 當前頁碼
+        const pageSize = 25;  // 每頁顯示幾篇
+
+        // 1. 抓取 JSON 資料
         fetch('data.json?v=' + new Date().getTime())
             .then(response => response.json())
             .then(data => {
-                const listContainer = document.getElementById('article-list');
-                listContainer.innerHTML = ''; // 清空「載入中」的文字
-
-                // 2. 用迴圈把每一筆 JSON 資料倒出來，生出 HTML 標籤
-                data.forEach(post => {
-                    const li = document.createElement('li');
-                    li.className = 'post-item';
-                    
-                    // 這裡讓連結指向 posts/post_ID.html 的格式
-                    li.innerHTML = `
-                        <a class="post-link" href="posts/post_${post.id}.html" target="_blank">
-                            【Dcard】${post.title}
-                        </a>
-                    `;
-                    listContainer.appendChild(li);
-                });
+                allArticles = data; // 把全部資料存起來
+                renderPage();       // 開始渲染第一頁
             })
             .catch(error => {
                 console.error('讀取 JSON 失敗:', error);
                 document.getElementById('article-list').innerHTML = '<p>資料載入失敗 😢</p>';
             });
+
+        # 顯示特定頁面資料的函式
+        function renderPage() {
+            const listContainer = document.getElementById('article-list');
+            listContainer.innerHTML = ''; // 清空舊畫面
+
+            // 2. 計算這一頁要顯示的「起點」與「終點」索引
+            // 假設第一頁(page=1)：start = 0, end = 25
+            // 假設第二頁(page=2)：start = 25, end = 50
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            
+            // 3. 擷取這 25 篇資料
+            const pageArticles = allArticles.slice(startIndex, endIndex);
+
+            // 4. 將這 25 篇生出 HTML
+            pageArticles.forEach(post => {
+                const li = document.createElement('li');
+                li.className = 'post-item';
+                li.innerHTML = `
+                    <a class="post-link" href="posts/post_${post.id}.html" target="_blank">
+                        【Dcard】${post.title}
+                    </a>
+                `;
+                listContainer.appendChild(li);
+            });
+
+            // 5. 更新分頁按鈕的狀態與文字
+            document.getElementById('page-info').innerText = `第 ${currentPage} / ${Math.ceil(allArticles.length / pageSize)} 頁`;
+            
+            // 如果是第一頁，就把「上一頁」按鈕廢掉
+            document.getElementById('prev-btn').disabled = (currentPage === 1);
+            
+            // 如果已經到最後一頁，就把「下一頁」按鈕廢掉
+            document.getElementById('next-btn').disabled = (endIndex >= allArticles.length);
+        }
+
+        # 切換頁面的按鈕事件
+        function changePage(direction) {
+            currentPage += direction; // +1 代表下一頁，-1 代表上一頁
+            renderPage();             // 重新渲染畫面
+            window.scrollTo(0, 0);    // 切頁後自動捲動回到網頁最上方
+        }
     </script>
 </body>
 </html>
