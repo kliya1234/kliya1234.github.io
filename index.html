@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Dcard 備份總覽 - 分頁版</title>
+    <title>論壇精選文章備份庫</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f7f9; }
         h1 { color: #003264; border-bottom: 2px solid #003264; padding-bottom: 10px; }
@@ -16,20 +16,42 @@
         .page-btn { padding: 8px 16px; background-color: #003264; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         .page-btn:disabled { background-color: #cccccc; cursor: not-allowed; }
         .page-info { font-weight: bold; color: #555; }
+
+        /* === 以下為新增的詳細頁與免責聲明樣式 === */
+        .post-detail { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        /* white-space: pre-line 是最關鍵的 CSS，能讓讀取出來的 txt 檔案完美保留換行排版 */
+        .post-content { line-height: 1.8; margin: 20px 0; white-space: pre-line; font-size: 16px; color: #333; } 
+        .back-btn { display: inline-block; margin-bottom: 15px; text-decoration: none; color: #003264; font-weight: bold; font-size: 16px; }
+        .disclaimer { font-size: 12px; color: #888; text-align: center; margin-top: 40px; border-top: 1px dashed #ccc; padding-top: 10px; line-height: 1.6; }
     </style>
 </head>
 <body>
 
-    <h1>Dcard 備份</h1>
-    
-    <ul id="article-list" class="post-list">
-        <p>文章載入中...</p>
-    </ul>
+    <div id="list-view">
+        <h1>🚀 精選文章備份列表</h1>
+        
+        <ul id="article-list" class="post-list">
+            <p>文章載入中...</p>
+        </ul>
 
-    <div class="pagination-container">
-        <button id="prev-btn" class="page-btn" onclick="changePage(-1)" disabled>上一頁</button>
-        <span id="page-info" class="page-info">第 1 頁</span>
-        <button id="next-btn" class="page-btn" onclick="changePage(1)" disabled>下一頁</button>
+        <div class="pagination-container">
+            <button id="prev-btn" class="page-btn" onclick="changePage(-1)" disabled>上一頁</button>
+            <span id="page-info" class="page-info">第 1 頁</span>
+            <button id="next-btn" class="page-btn" onclick="changePage(1)" disabled>下一頁</button>
+        </div>
+    </div>
+
+    <div id="detail-view" style="display: none;">
+        <a href="?" class="back-btn">⬅️ 返回文章列表</a>
+        <div class="post-detail">
+            <h1 id="detail-title">文章標題</h1>
+            <div id="detail-content" class="post-content">內文載入中...⌛</div>
+        </div>
+    </div>
+
+    <div class="disclaimer">
+        本站僅為個人網頁技術與自動化排程之學術測試專案，內容皆透過公開爬蟲技術取得並標示原始出處。<br>
+        本專案為非官方（Unofficial）工具，與任何商業論壇官方無關。
     </div>
 
     <script>
@@ -37,20 +59,34 @@
         let currentPage = 1;  // 當前頁碼
         const pageSize = 25;  // 每頁顯示幾篇
 
+        // 🌟 新增：取得網址列的參數 ?id=xxxxxx
+        const urlParams = new URLSearchParams(window.location.search);
+        const postId = urlParams.get('id');
+
         // 1. 抓取 JSON 資料
         fetch('data.json?v=' + new Date().getTime())
             .then(response => response.json())
             .then(data => {
                 allArticles = data; // 把全部資料存起來
-                renderPage();       // 開始渲染第一頁
+                
+                // 🌟 新增：判斷網址有沒有帶 ?id=文章ID
+                if (postId) {
+                    showPostDetail(postId); // 有帶 ID，就直接載入該文章的 txt 內容
+                } else {
+                    renderPage();           // 沒帶 ID，顯示正常的 25 篇列表首頁
+                }
             })
             .catch(error => {
                 console.error('讀取 JSON 失敗:', error);
                 document.getElementById('article-list').innerHTML = '<p>資料載入失敗 😢</p>';
             });
 
-        // 顯示特定頁面資料的函式 (已將 # 改為 //)
+        // 顯示特定頁面資料的函式
         function renderPage() {
+            // 🌟 新增：切換顯示區域（顯示列表、隱藏詳細頁）
+            document.getElementById('list-view').style.display = 'block';
+            document.getElementById('detail-view').style.display = 'none';
+
             const listContainer = document.getElementById('article-list');
             listContainer.innerHTML = ''; // 清空舊畫面
 
@@ -65,9 +101,10 @@
             pageArticles.forEach(post => {
                 const li = document.createElement('li');
                 li.className = 'post-item';
+                // 🌟 修改：將連結指向 "?id=文章ID"，並移除 target="_blank"
                 li.innerHTML = `
-                    <a class="post-link" href="posts/post_${post.id}.html" target="_blank">
-                        ${post.title}
+                    <a class="post-link" href="?id=${post.id}">
+                        📌 ${post.title}
                     </a>
                 `;
                 listContainer.appendChild(li);
@@ -83,7 +120,40 @@
             document.getElementById('next-btn').disabled = (endIndex >= allArticles.length);
         }
 
-        // 切換頁面的按鈕事件 (已將 # 改為 //)
+        // 🌟 新增：點擊文章後，動態讀取對應 .txt 內容並顯示的函式
+        function showPostDetail(id) {
+            // 切換顯示區域（隱藏列表、顯示詳細頁）
+            document.getElementById('list-view').style.display = 'none';
+            document.getElementById('detail-view').style.display = 'block';
+
+            // 先在 json 中找到對應 ID 的標題
+            const postInfo = allArticles.find(item => String(item.id) === String(id));
+
+            if (postInfo) {
+                document.getElementById('detail-title').innerText = postInfo.title;
+                document.getElementById('detail-content').innerText = "內文載入中...⌛";
+
+                // 動態連線去 posts 資料夾下載該文章的文字檔 id.txt
+                fetch(`posts/${id}.txt?v=` + new Date().getTime())
+                    .then(response => {
+                        if (!response.ok) throw new Error('找不到該文章的文字檔');
+                        return response.text(); // 用 text() 解析純文字
+                    })
+                    .then(textContent => {
+                        // 成功讀取，將文字直接塞進網頁
+                        document.getElementById('detail-content').innerText = textContent;
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        document.getElementById('detail-content').innerText = "❌ 讀取文章內容失敗，可能檔案尚未同步。";
+                    });
+            } else {
+                document.getElementById('detail-title').innerText = "找不到文章";
+                document.getElementById('detail-content').innerText = "該文章可能未被記錄。";
+            }
+        }
+
+        // 切換頁面的按鈕事件
         function changePage(direction) {
             currentPage += direction; // +1 代表下一頁，-1 代表上一頁
             renderPage();             // 重新渲染畫面
