@@ -12,10 +12,39 @@ const padding = 25;
 const cellSize = (canvas.width - padding * 2) / (BOARD_SIZE - 1);
 
 // P2P 連線狀態
-const peer = new Peer();
-let conn = null;
-let myColor = 1;     // 1: 黑子 (Host 預設), 2: 白子 (Guest 預設)
-let isMyTurn = false; // 是否輪到自己下
+function generateShortId(length = 6) {
+  const chars = '0123456789'; // 若想要英數混合，可改為 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// 產生一個 6 位數房號
+const customRoomId = generateShortId(6);
+
+// 2. 將產生的簡短房號傳入 PeerJS
+const peer = new Peer(customRoomId, {
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  }
+});
+
+// 3. 錯誤處理 (包含防撞號機制)
+peer.on('error', (err) => {
+  if (err.type === 'unavailable-id') {
+    // 如果不幸跟全域其他使用者撞號，自動重新整理換一個新房號
+    console.warn("房號被佔用，重新產生中...");
+    location.reload();
+  } else {
+    document.getElementById('my-id').innerText = "連線失敗";
+    updateStatus(`伺服器連線失敗 (${err.type})，請重新整理或重開網路。`);
+  }
+});
 
 // =========================================================
 // 2. Canvas 棋盤與棋子繪製
