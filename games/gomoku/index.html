@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- CSP 放行權限 (避免 PeerJS 被阻擋) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: wss:; connect-src 'self' https: wss:;">
+
+  <title>雙人線上五子棋 - P2P 版</title>
+  <!-- JS 備用 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: "Segoe UI", Microsoft JhengHei, sans-serif;
+      background-color: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    .back-link {
+      align-self: flex-start;
+      max-width: 1000px;
+      margin: 0 auto 15px auto;
+      width: 100%;
+    }
+    .back-link a {
+      color: #4f46e5;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    .back-link a:hover {
+      text-decoration: underline;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+      max-width: 1000px;
+      width: 100%;
+    }
+    .panel {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      flex: 1;
+      min-width: 300px;
+    }
+    .panel-section {
+      margin-bottom: 15px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+    .panel-section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 12px;
+      margin: 8px 0;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      background-color: #4f46e5;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.2s;
+      width: 100%;
+      margin-top: 5px;
+    }
+    button:hover {
+      background-color: #4338ca;
+    }
+    .status-box {
+      background: #f8fafc;
+      border-left: 4px solid #4f46e5;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #334155;
+      white-space: pre-line;
+    }
+    .board-container {
+      background-color: #e3a857;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    canvas {
+      display: block;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="back-link">
+    <a href="../../index.html">← 返回遊戲大廳</a>
+  </div>
+
+  <h1>雙人 P2P 線上五子棋</h1>
+
+  <div class="container">
+    <div class="panel">
+      <div class="panel-section">
+        <h3>1. 你的房號 (建立對局)</h3>
+        <p style="margin-top:5px;">房號：<strong id="my-id">連線中...</strong></p>
+        <button onclick="copyShareLink()">複製邀請連結</button>
+      </div>
+
+      <div class="panel-section">
+        <h3>2. 加入對手房間</h3>
+        <input type="text" id="join-id-input" placeholder="貼上對手的房號">
+        <button onclick="joinGame()">連線到對手</button>
+      </div>
+
+      <div class="panel-section">
+        <h3>3. 對局狀態</h3>
+        <div class="status-box" id="status-text">初始化中...</div>
+        <div class="status-box" id="turn-text" style="margin-top:8px;">身份：尚未連線</div>
+      </div>
+    </div>
+
+    <div class="board-container">
+      <canvas id="board" width="560" height="560"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const BOARD_SIZE = 15; // 標準五子棋 15x15 棋盤
+    let board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0)); // 0:空, 1:黑, 2:白
+    let lastMove = null;
+    let gameOver = false;
+
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    const padding = 30;
+    const cellSize = (canvas.width - padding * 2) / (BOARD_SIZE - 1);
+
+    // PeerJS 穿透設定
+    const peer = new Peer({
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
+
+    let conn = null;
+    let myColor = 1;     // 1: 黑子, 2: 白子
+    let isMyTurn = false;
+
+    // 繪製棋盤
+    function drawBoard() {
+      ctx.fillStyle = '#e3a857';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = '#333333';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < BOARD_SIZE; i++) {
+        // 橫線
+        ctx.beginPath();
+        ctx.moveTo(padding, padding + i * cellSize);
+        ctx.lineTo(canvas.width - padding, padding + i * cellSize);
+        ctx.stroke();
+
+        // 直線
+        ctx.beginPath();
+        ctx.moveTo(padding + i * cellSize, padding);
+        ctx.lineTo(padding + i * cellSize, canvas.height - padding);
+        ctx.stroke();
+      }
+
+      // 星位 (天元與四角)
+      const starPoints = [3, 7, 11];
+      ctx.fillStyle = '#333333';
+      for (let x of starPoints) {
+        for (let y of starPoints) {
+          ctx.beginPath();
+          ctx.arc(padding + x * cellSize, padding + y * cellSize, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // 繪製棋子
+      for (let y = 0; y < BOARD_SIZE; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+          if (board[y][x] !== 0) {
+            drawStone(x, y, board[y][x]);
+          }
+        }
+      }
+
+      // 最後落子提示
+      if (lastMove) {
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.arc(padding + lastMove[0] * cellSize, padding + lastMove[1] * cellSize, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawStone(x, y, color) {
+      const px = padding + x * cellSize;
+      const py = padding + y * cellSize;
+      const radius = cellSize * 0.43;
+
+      ctx.beginPath();
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+
+      const gradient = ctx.createRadialGradient(
+        px - radius * 0.3, py - radius * 0.3, radius * 0.1,
+        px, py, radius
+      );
+
+      if (color === 1) {
+        gradient.addColorStop(0, '#666666');
+        gradient.addColorStop(1, '#000000');
+      } else {
+        gradient.addColorStop(0, '#ffffff');
+        gradient.addColorStop(1, '#d1d5db');
+      }
+
+      ctx.fillStyle = gradient;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+    }
+
+    // 五子棋勝負判定
+    function checkWin(x, y, color) {
+      const directions = [
+        [[1, 0], [-1, 0]],   // 水平
+        [[0, 1], [0, -1]],   // 垂直
+        [[1, 1], [-1, -1]],  // 撇號斜向
+        [[1, -1], [-1, 1]]   // 捺號斜向
+      ];
+
+      for (let dirPair of directions) {
+        let count = 1;
+        for (let [dx, dy] of dirPair) {
+          let nx = x + dx;
+          let ny = y + dy;
+          while (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && board[ny][nx] === color) {
+            count++;
+            nx += dx;
+            ny += dy;
+          }
+        }
+        if (count >= 5) return true;
+      }
+      return false;
+    }
+
+    // PeerJS 監聽
+    peer.on('open', (id) => {
+      document.getElementById('my-id').innerText = id;
+      updateStatus("已連線至伺服器，等待對手加入...");
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomId = urlParams.get('room');
+      if (roomId) {
+        document.getElementById('join-id-input').value = roomId;
+        joinGame(roomId);
+      }
+    });
+
+    peer.on('error', (err) => {
+      document.getElementById('my-id').innerText = "連線失敗";
+      updateStatus(`伺服器連線失敗 (${err.type})，請重新整理或重開網路。`);
+    });
+
+    peer.on('connection', (c) => {
+      if (conn) return c.close();
+      conn = c;
+      myColor = 1;
+      isMyTurn = true;
+      setupDataListener();
+      updateStatus("對手已加入！遊戲開始，由你先手 (黑棋)。");
+      updateTurnUI();
+    });
+
+    function joinGame(targetId) {
+      const hostId = targetId || document.getElementById('join-id-input').value.trim();
+      if (!hostId) return alert("請輸入房號！");
+
+      updateStatus("連線對手房間中...");
+      conn = peer.connect(hostId);
+      myColor = 2;
+      isMyTurn = false;
+      setupDataListener();
+    }
+
+    function setupDataListener() {
+      conn.on('open', () => {
+        updateStatus("連線成功！遊戲開始。");
+        updateTurnUI();
+      });
+
+      conn.on('data', (data) => {
+        if (data.type === 'MOVE') {
+          board[data.y][data.x] = data.color;
+          lastMove = [data.x, data.y];
+          drawBoard();
+
+          if (checkWin(data.x, data.y, data.color)) {
+            gameOver = true;
+            updateStatus("對手達成五連連線，遊戲結束！");
+            alert("對手獲勝！");
+          } else {
+            isMyTurn = true;
+            updateTurnUI();
+          }
+        }
+      });
+
+      conn.on('close', () => {
+        updateStatus("對手已離線。");
+        conn = null;
+      });
+    }
+
+    // 點擊落子
+    canvas.addEventListener('click', (e) => {
+      if (!conn || !isMyTurn || gameOver) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      const x = Math.round((mx - padding) / cellSize);
+      const y = Math.round((my - padding) / cellSize);
+
+      if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE && board[y][x] === 0) {
+        board[y][x] = myColor;
+        lastMove = [x, y];
+        drawBoard();
+
+        conn.send({ type: 'MOVE', x: x, y: y, color: myColor });
+
+        if (checkWin(x, y, myColor)) {
+          gameOver = true;
+          updateStatus("恭喜你！五連連線獲勝！");
+          alert("你贏了！");
+        } else {
+          isMyTurn = false;
+          updateTurnUI();
+        }
+      }
+    });
+
+    function updateStatus(msg) {
+      document.getElementById('status-text').innerText = msg;
+    }
+
+    function updateTurnUI() {
+      if (gameOver) return;
+      const roleStr = myColor === 1 ? "黑棋 (先手)" : "白棋 (後手)";
+      const turnStr = isMyTurn ? "【輪到你下棋】" : "等待對手下棋中...";
+      document.getElementById('turn-text').innerText = `你的身份：${roleStr}\n狀態：${turnStr}`;
+    }
+
+    function copyShareLink() {
+      const myId = document.getElementById('my-id').innerText;
+      if (!myId || myId.includes('.')) return alert("請等待房號生成！");
+
+      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${myId}`;
+      navigator.clipboard.writeText(shareUrl);
+      alert("邀請連結已複製！貼給朋友即可連線。");
+    }
+
+    drawBoard();
+  </script>
+</body>
+</html>
