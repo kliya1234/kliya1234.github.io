@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- 💡 新增這一行：允許 PeerJS 執行必要的腳本與連線 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: wss:; connect-src 'self' https: wss:;">
+
   <title>雙人線上圍棋 - P2P 版</title>
   <!-- 引入 PeerJS 免費連線 SDK -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
