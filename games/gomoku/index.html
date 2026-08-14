@@ -43,12 +43,15 @@
       margin-bottom: 20px;
       color: #333;
     }
+    
+    /* 💡 主容器：align-items: flex-start 避免右側棋盤被拉長 */
     .container {
       display: flex;
       flex-wrap: wrap;
       gap: 20px;
       justify-content: center;
-      max-width: 1000px;
+      align-items: flex-start; 
+      max-width: 1050px;
       width: 100%;
     }
     .panel {
@@ -57,7 +60,7 @@
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
       flex: 1;
-      min-width: 300px;
+      min-width: 320px;
     }
     .panel-section {
       margin-bottom: 15px;
@@ -105,20 +108,29 @@
       color: #334155;
       white-space: pre-line;
     }
+
+    /* 💡 棋盤外框與 Canvas：強制維持 1:1 正方形 */
     .board-container {
       background-color: #e3a857;
       padding: 15px;
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
     canvas {
       display: block;
       cursor: pointer;
+      width: 540px;
+      height: 540px;
+      max-width: 100%;
+      aspect-ratio: 1 / 1; /* 強制保持正方形比例 */
     }
 
     /* 聊天室樣式 */
     .chat-box {
-      height: 160px;
+      height: 150px;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
       padding: 10px;
@@ -175,13 +187,13 @@
     <div class="panel">
       <div class="panel-section">
         <h3>1. 你的房號 (建立對局)</h3>
-        <p style="margin-top:5px;">房號：<strong id="my-id">連線中...</strong></p>
+        <p style="margin-top:5px;">房號：<strong id="my-id">生成中...</strong></p>
         <button onclick="copyShareLink()">複製邀請連結</button>
       </div>
 
       <div class="panel-section">
         <h3>2. 加入對手房間</h3>
-        <input type="text" id="join-id-input" placeholder="貼上對手的房號">
+        <input type="text" id="join-id-input" placeholder="貼上對手的 6 位數房號">
         <button id="join-btn" onclick="joinGame()">連線到對手</button>
       </div>
 
@@ -219,7 +231,7 @@
     const padding = 30;
     const cellSize = (canvas.width - padding * 2) / (BOARD_SIZE - 1);
 
-    // 產生 6 位數簡短房號
+    // 產生 6 位數字簡短房號
     function generateShortId(length = 6) {
       const chars = '0123456789';
       let result = '';
@@ -245,7 +257,7 @@
     let myColor = 1;     // 1: 黑, 2: 白
     let isMyTurn = false;
 
-    // 繪製棋盤與星位
+    // 繪製棋盤
     function drawBoard() {
       ctx.fillStyle = '#e3a857';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -253,17 +265,20 @@
       ctx.strokeStyle = '#333333';
       ctx.lineWidth = 1;
       for (let i = 0; i < BOARD_SIZE; i++) {
+        // 橫線
         ctx.beginPath();
         ctx.moveTo(padding, padding + i * cellSize);
         ctx.lineTo(canvas.width - padding, padding + i * cellSize);
         ctx.stroke();
 
+        // 直線
         ctx.beginPath();
         ctx.moveTo(padding + i * cellSize, padding);
         ctx.lineTo(padding + i * cellSize, canvas.height - padding);
         ctx.stroke();
       }
 
+      // 星位
       const starPoints = [3, 7, 11];
       ctx.fillStyle = '#333333';
       for (let x of starPoints) {
@@ -274,6 +289,7 @@
         }
       }
 
+      // 棋子
       for (let y = 0; y < BOARD_SIZE; y++) {
         for (let x = 0; x < BOARD_SIZE; x++) {
           if (board[y][x] !== 0) {
@@ -282,6 +298,7 @@
         }
       }
 
+      // 最後落子紅點提示
       if (lastMove) {
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
@@ -320,7 +337,7 @@
       ctx.shadowColor = 'transparent';
     }
 
-    // 勝負判定邏輯
+    // 勝負判定
     function checkWin(x, y, color) {
       const directions = [
         [[1, 0], [-1, 0]],   // 水平
@@ -345,7 +362,7 @@
       return false;
     }
 
-    // PeerJS 事件
+    // PeerJS 監聽事件
     peer.on('open', (id) => {
       document.getElementById('my-id').innerText = id;
       updateStatus("已連線至伺服器，等待對手加入...");
@@ -360,7 +377,7 @@
 
     peer.on('error', (err) => {
       if (err.type === 'unavailable-id') {
-        console.warn("房號重複，自動重新產生中...");
+        console.warn("房號重複，重新生成中...");
         location.reload();
       } else {
         document.getElementById('my-id').innerText = "連線失敗";
@@ -385,7 +402,7 @@
       if (conn && conn.open) return;
 
       const hostId = targetId || document.getElementById('join-id-input').value.trim();
-      if (!hostId) return alert("請輸入房號！");
+      if (!hostId) return alert("請輸入對手的房號！");
 
       const joinBtn = document.getElementById('join-btn');
       if (joinBtn) joinBtn.disabled = true;
@@ -443,13 +460,19 @@
       });
     }
 
-    // 點擊 Canvas 落子
+    // Canvas 點擊落子
     canvas.addEventListener('click', (e) => {
-      if (!conn || !conn.open || !isMyTurn || gameOver) return;
+      if (!conn || !conn.open) {
+        return alert("請先連線對手才能開始下棋！");
+      }
+      if (!isMyTurn || gameOver) return;
 
       const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
 
       const x = Math.round((mx - padding) / cellSize);
       const y = Math.round((my - padding) / cellSize);
@@ -472,7 +495,7 @@
       }
     });
 
-    // 聊天室功能
+    // 聊天室邏輯
     function sendChatMessage() {
       const input = document.getElementById('chat-input');
       const text = input.value.trim();
@@ -480,7 +503,7 @@
       if (!text) return;
 
       if (!conn || !conn.open) {
-        alert("尚未建立連線，請先連接對手！");
+        alert("尚未連線對手，訊息無法傳送！請先讓對手加入或輸入對手房號連線。");
         return;
       }
 
@@ -491,6 +514,12 @@
 
     function appendChatMessage(text, isMe) {
       const box = document.getElementById('chat-box');
+      
+      // 清除預設提示文字
+      if (box.children.length === 1 && box.children[0].tagName === 'DIV' && box.children[0].innerText.includes('連線成功後')) {
+        box.innerHTML = '';
+      }
+
       const msgDiv = document.createElement('div');
       msgDiv.className = `chat-msg ${isMe ? 'my-msg' : 'peer-msg'}`;
       msgDiv.innerText = text;
