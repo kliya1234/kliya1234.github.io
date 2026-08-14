@@ -118,14 +118,17 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      flex: 0 0 auto;      /* 防止被 Flexbox 拉伸或壓縮 */
+      max-width: 100%;
     }
+    
     canvas {
       display: block;
       cursor: pointer;
-      width: 540px;
-      height: 540px;
-      max-width: 100%;
-      aspect-ratio: 1 / 1; /* 強制保持正方形比例 */
+      width: 100%;
+      max-width: 560px;    /* 最大顯示寬度 */
+      height: auto;        /* 關鍵：高度自動跟隨寬度按比例縮放 */
+      aspect-ratio: 1 / 1; /* 鎖定 1:1 正方形比例 */
     }
 
     /* 聊天室樣式 */
