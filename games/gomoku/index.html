@@ -8,8 +8,9 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: wss:; connect-src 'self' https: wss:;">
 
   <title>雙人線上五子棋 - P2P 版</title>
-  <!-- JS 備用 CDN -->
+  <!-- PeerJS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  
   <style>
     * {
       box-sizing: border-box;
@@ -90,6 +91,10 @@
     button:hover {
       background-color: #4338ca;
     }
+    button:disabled {
+      background-color: #9ca3af;
+      cursor: not-allowed;
+    }
     .status-box {
       background: #f8fafc;
       border-left: 4px solid #4f46e5;
@@ -106,7 +111,12 @@
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.25);
     }
-        /* 聊天室樣式 */
+    canvas {
+      display: block;
+      cursor: pointer;
+    }
+
+    /* 聊天室樣式 */
     .chat-box {
       height: 160px;
       border: 1px solid #e2e8f0;
@@ -127,14 +137,12 @@
       word-break: break-all;
       line-height: 1.4;
     }
-    /* 自己發送的訊息 (靠右，紫色背景) */
     .chat-msg.my-msg {
       align-self: flex-end;
       background-color: #4f46e5;
       color: white;
       border-bottom-right-radius: 2px;
     }
-    /* 對手發送的訊息 (靠左，灰色背景) */
     .chat-msg.peer-msg {
       align-self: flex-start;
       background-color: #e2e8f0;
@@ -153,10 +161,6 @@
       margin: 0;
       white-space: nowrap;
     }
-    canvas {
-      display: block;
-      cursor: pointer;
-    }
   </style>
 </head>
 <body>
@@ -174,27 +178,28 @@
         <p style="margin-top:5px;">房號：<strong id="my-id">連線中...</strong></p>
         <button onclick="copyShareLink()">複製邀請連結</button>
       </div>
-      <div class="panel-section">
-        <h3>4. 聊天室</h3>
-        <div class="chat-box" id="chat-box">
-          <div style="color: #94a3b8; font-size: 12px; text-align: center;">聊天室已就緒...</div>
-        </div>
-        <div class="chat-input-group">
-          <input type="text" id="chat-input" placeholder="輸入訊息..." onkeydown="if(event.key==='Enter') sendChatMessage()">
-          <button onclick="sendChatMessage()">發送</button>
-        </div>
-      </div>
 
       <div class="panel-section">
         <h3>2. 加入對手房間</h3>
         <input type="text" id="join-id-input" placeholder="貼上對手的房號">
-        <button onclick="joinGame()">連線到對手</button>
+        <button id="join-btn" onclick="joinGame()">連線到對手</button>
       </div>
 
       <div class="panel-section">
         <h3>3. 對局狀態</h3>
         <div class="status-box" id="status-text">初始化中...</div>
         <div class="status-box" id="turn-text" style="margin-top:8px;">身份：尚未連線</div>
+      </div>
+
+      <div class="panel-section">
+        <h3>4. 聊天室</h3>
+        <div class="chat-box" id="chat-box">
+          <div style="color: #94a3b8; font-size: 12px; text-align: center;">連線成功後即可開始聊天...</div>
+        </div>
+        <div class="chat-input-group">
+          <input type="text" id="chat-input" placeholder="輸入訊息..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+          <button onclick="sendChatMessage()">發送</button>
+        </div>
       </div>
     </div>
 
@@ -204,8 +209,8 @@
   </div>
 
   <script>
-    const BOARD_SIZE = 15; // 標準五子棋 15x15 棋盤
-    let board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0)); // 0:空, 1:黑, 2:白
+    const BOARD_SIZE = 15;
+    let board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
     let lastMove = null;
     let gameOver = false;
 
@@ -214,8 +219,20 @@
     const padding = 30;
     const cellSize = (canvas.width - padding * 2) / (BOARD_SIZE - 1);
 
-    // PeerJS 穿透設定
-    const peer = new Peer({
+    // 產生 6 位數簡短房號
+    function generateShortId(length = 6) {
+      const chars = '0123456789';
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    const customRoomId = generateShortId(6);
+
+    // PeerJS 初始化
+    const peer = new Peer(customRoomId, {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -225,10 +242,10 @@
     });
 
     let conn = null;
-    let myColor = 1;     // 1: 黑子, 2: 白子
+    let myColor = 1;     // 1: 黑, 2: 白
     let isMyTurn = false;
 
-    // 繪製棋盤
+    // 繪製棋盤與星位
     function drawBoard() {
       ctx.fillStyle = '#e3a857';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -236,20 +253,17 @@
       ctx.strokeStyle = '#333333';
       ctx.lineWidth = 1;
       for (let i = 0; i < BOARD_SIZE; i++) {
-        // 橫線
         ctx.beginPath();
         ctx.moveTo(padding, padding + i * cellSize);
         ctx.lineTo(canvas.width - padding, padding + i * cellSize);
         ctx.stroke();
 
-        // 直線
         ctx.beginPath();
         ctx.moveTo(padding + i * cellSize, padding);
         ctx.lineTo(padding + i * cellSize, canvas.height - padding);
         ctx.stroke();
       }
 
-      // 星位 (天元與四角)
       const starPoints = [3, 7, 11];
       ctx.fillStyle = '#333333';
       for (let x of starPoints) {
@@ -260,7 +274,6 @@
         }
       }
 
-      // 繪製棋子
       for (let y = 0; y < BOARD_SIZE; y++) {
         for (let x = 0; x < BOARD_SIZE; x++) {
           if (board[y][x] !== 0) {
@@ -269,7 +282,6 @@
         }
       }
 
-      // 最後落子提示
       if (lastMove) {
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
@@ -308,13 +320,13 @@
       ctx.shadowColor = 'transparent';
     }
 
-    // 五子棋勝負判定
+    // 勝負判定邏輯
     function checkWin(x, y, color) {
       const directions = [
         [[1, 0], [-1, 0]],   // 水平
         [[0, 1], [0, -1]],   // 垂直
-        [[1, 1], [-1, -1]],  // 撇號斜向
-        [[1, -1], [-1, 1]]   // 捺號斜向
+        [[1, 1], [-1, -1]],  // 斜線 \
+        [[1, -1], [-1, 1]]   // 斜線 /
       ];
 
       for (let dirPair of directions) {
@@ -333,7 +345,7 @@
       return false;
     }
 
-    // PeerJS 監聽
+    // PeerJS 事件
     peer.on('open', (id) => {
       document.getElementById('my-id').innerText = id;
       updateStatus("已連線至伺服器，等待對手加入...");
@@ -347,12 +359,20 @@
     });
 
     peer.on('error', (err) => {
-      document.getElementById('my-id').innerText = "連線失敗";
-      updateStatus(`伺服器連線失敗 (${err.type})，請重新整理或重開網路。`);
+      if (err.type === 'unavailable-id') {
+        console.warn("房號重複，自動重新產生中...");
+        location.reload();
+      } else {
+        document.getElementById('my-id').innerText = "連線失敗";
+        updateStatus(`伺服器連線失敗 (${err.type})，請重新整理頁面。`);
+      }
     });
 
     peer.on('connection', (c) => {
-      if (conn) return c.close();
+      if (conn && conn.open) {
+        c.close();
+        return;
+      }
       conn = c;
       myColor = 1;
       isMyTurn = true;
@@ -362,8 +382,13 @@
     });
 
     function joinGame(targetId) {
+      if (conn && conn.open) return;
+
       const hostId = targetId || document.getElementById('join-id-input').value.trim();
       if (!hostId) return alert("請輸入房號！");
+
+      const joinBtn = document.getElementById('join-btn');
+      if (joinBtn) joinBtn.disabled = true;
 
       updateStatus("連線對手房間中...");
       conn = peer.connect(hostId);
@@ -376,6 +401,10 @@
       conn.on('open', () => {
         updateStatus("連線成功！遊戲開始。");
         updateTurnUI();
+        
+        document.getElementById('join-id-input').disabled = true;
+        const joinBtn = document.getElementById('join-btn');
+        if (joinBtn) joinBtn.disabled = true;
       });
 
       conn.on('data', (data) => {
@@ -392,18 +421,31 @@
             isMyTurn = true;
             updateTurnUI();
           }
+        } else if (data.type === 'CHAT') {
+          appendChatMessage(data.text, false);
         }
       });
 
       conn.on('close', () => {
         updateStatus("對手已離線。");
         conn = null;
+        
+        document.getElementById('join-id-input').disabled = false;
+        const joinBtn = document.getElementById('join-btn');
+        if (joinBtn) joinBtn.disabled = false;
+      });
+
+      conn.on('error', (err) => {
+        console.error("P2P 通訊錯誤：", err);
+        conn = null;
+        const joinBtn = document.getElementById('join-btn');
+        if (joinBtn) joinBtn.disabled = false;
       });
     }
 
-    // 點擊落子
+    // 點擊 Canvas 落子
     canvas.addEventListener('click', (e) => {
-      if (!conn || !isMyTurn || gameOver) return;
+      if (!conn || !conn.open || !isMyTurn || gameOver) return;
 
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
@@ -429,6 +471,32 @@
         }
       }
     });
+
+    // 聊天室功能
+    function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      
+      if (!text) return;
+
+      if (!conn || !conn.open) {
+        alert("尚未建立連線，請先連接對手！");
+        return;
+      }
+
+      conn.send({ type: 'CHAT', text: text });
+      appendChatMessage(text, true);
+      input.value = '';
+    }
+
+    function appendChatMessage(text, isMe) {
+      const box = document.getElementById('chat-box');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `chat-msg ${isMe ? 'my-msg' : 'peer-msg'}`;
+      msgDiv.innerText = text;
+      box.appendChild(msgDiv);
+      box.scrollTop = box.scrollHeight;
+    }
 
     function updateStatus(msg) {
       document.getElementById('status-text').innerText = msg;
